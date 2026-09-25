@@ -21,7 +21,7 @@
      막으려던 것이 열린다. src → srcdoc 되돌리기는 그 자체로 보안 사고다.
 
   ⚠️ 이 파일은 생성물이다. 원본은 map-frame/index.template.html —
-     배포 스크립트가 rng0yufszb 를 치환한다. index.html 을 직접 고치지 말 것.
+     배포 스크립트가 __NAVER_KEY__ 를 치환한다. index.html 을 직접 고치지 말 것.
 -->
 <style>
   html, body { height: 100%; margin: 0; background: #F7F8FA;
@@ -69,7 +69,7 @@
     fail('지도 인증 실패', '이 도메인(' + location.origin + ')이 네이버 클라우드 콘솔의 Web 서비스 URL 에 등록되지 않았습니다.');
   };
 
-  var KEY = 'rng0yufszb';
+  var KEY = '__NAVER_KEY__';
   if (!KEY || KEY.indexOf('__') === 0) { fail('지도 키 없음', '배포 시 키가 치환되지 않았습니다.'); return; }
 
   var s = document.createElement('script');
