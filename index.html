@@ -117,7 +117,13 @@
     try {
       map.invalidateSize(false);
       var s = map.getSize();
-      if (!userMoved && facs.length && s.x > 0 && s.y > 0 && (lastFitW === 0 || lastFitH === 0)) fitToData(curCat);
+      if (!userMoved && facs.length && s.x > 0 && s.y > 0 && (lastFitW === 0 || lastFitH === 0)) {
+        fitToData(curCat);
+        var c2 = map.getCenter();
+        // 크기 0 에서 렌더된 지도를 되살렸다는 사실을 남긴다 — 안 보이면 프레임이 낡은 것이다.
+        post({ type: 'refit', size: [s.x, s.y], zoom: map.getZoom(),
+          center: [Number(c2.lat.toFixed(4)), Number(c2.lng.toFixed(4))] });
+      }
     } catch (e) { /* noop */ }
   }
   window.addEventListener('resize', refit);
@@ -229,7 +235,7 @@
   });
 
   // 준비 완료를 알린다. 부모는 이 신호를 받은 뒤에 마커를 보낸다(로드 타이밍 경합 방지).
-  post({ type: 'ready', origin: location.origin });
+  post({ type: 'ready', origin: location.origin, build: 'refit-2' });
 
   // 타일 실패를 **수치로** 잡는다. 이 버그 유형(차단을 HTTP 200 + 안내 이미지로 주는 것)은
   // 눈으로도 상태코드로도 안 보인다 — 바이트 수로만 구분된다(진짜 23KB / 차단 7KB).
