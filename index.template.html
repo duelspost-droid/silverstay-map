@@ -189,6 +189,21 @@
   // 준비 완료를 알린다. 부모는 이 신호를 받은 뒤에 마커를 보낸다(로드 타이밍 경합 방지).
   post({ type: 'ready', origin: location.origin });
 
+  // 타일 실패를 **수치로** 잡는다. 이 버그 유형(차단을 HTTP 200 + 안내 이미지로 주는 것)은
+  // 눈으로도 상태코드로도 안 보인다 — 바이트 수로만 구분된다(진짜 23KB / 차단 7KB).
+  var tileErrors = 0, tileLoads = 0;
+  map.on('tileerror', function () { tileErrors++; });
+  map.on('tileload', function () { tileLoads++; });
+  setTimeout(function () {
+    var url = TILE_URL.replace('{z}', '7').replace('{x}', '109').replace('{y}', '49') + '?probe=' + Date.now();
+    fetch(url).then(function (r) { return r.arrayBuffer().then(function (b) {
+      post({ type: 'tileProbe', status: r.status, bytes: b.byteLength,
+        verdict: b.byteLength > 15000 ? 'real' : 'blocked', loads: tileLoads, errors: tileErrors });
+    }); }).catch(function (e) {
+      post({ type: 'tileProbe', error: String(e), loads: tileLoads, errors: tileErrors });
+    });
+  }, 3000);
+
   // 타일이 한 장도 안 붙으면 조용히 깨진 것이다 — 눈에 보이게 만든다.
   setTimeout(function () {
     var tiles = document.querySelectorAll('#map img.leaflet-tile').length;
