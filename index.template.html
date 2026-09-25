@@ -8,93 +8,181 @@
 <!--
   실버스테이 지도 프레임 (DR-62)
 
-  ⚠️ 이 페이지가 **부모 사이트와 다른 오리진**에 있는 것이 핵심이다.
-     silverstay.co.kr 안에서 sandbox srcdoc 으로 지도를 띄우면 iframe 이 opaque origin 이 되어
-     나가는 요청에 Referer 가 실리지 않는다. 그러면 ① OSM 은 차단 이미지를 HTTP 200 으로 주고
-     ② 네이버·카카오·VWorld 는 도메인 검증에 실패한다. 반대로 같은 오리진에서 sandbox 를 풀면
-     지도 코드가 부모 localStorage 의 Supabase 세션(=관리자 세션)에 닿는다.
-     별도 오리진이면 둘 다 해결된다 — 여기는 진짜 origin 이라 도메인 검증을 통과하고,
-     부모와 다른 origin 이라 세션에는 못 닿는다.
+  ⚠️ 이 페이지가 **부모 사이트와 다른 오리진**에 있는 것이 이 구조의 전부다.
+     silverstay.co.kr 안에서 sandbox srcdoc 으로 지도를 띄우면 iframe 이 opaque origin 이 되고,
+     나가는 타일 요청에 Referer 가 실리지 않는다. OSM 은 그런 요청에 차단 안내 이미지를
+     **HTTP 200 으로** 돌려준다(실측: Referer 있으면 23,021바이트 진짜 타일 / 없으면 6,987바이트).
+     반대로 같은 오리진에서 sandbox 를 풀면 지도 코드가 부모 localStorage 의 Supabase 세션
+     (= 관리자 세션)에 닿는다. 별도 오리진이면 둘 다 해결된다 —
+     여기는 진짜 origin 이라 Referer 가 나가고, 부모와 다른 origin 이라 세션에는 못 닿는다.
 
-  ⚠️ 부모는 이 프레임을 반드시 **src=<이 URL>** 로 띄워야 한다. srcdoc 으로 인라인하면
-     allow-same-origin 이 **부모 오리진**을 물려줘(HTML 명세 origin 결정 3단계) 정확히
-     막으려던 것이 열린다. src → srcdoc 되돌리기는 그 자체로 보안 사고다.
+  ⚠️ 부모는 이 프레임을 반드시 **src=<이 URL>** 로 띄운다. srcdoc 으로 인라인하면
+     allow-same-origin 이 **부모 오리진**을 물려줘(HTML 명세 origin 결정 3단계) 막으려던 것이 열린다.
+     src → srcdoc 되돌리기는 그 자체로 보안 사고다.
 
-  ⚠️ 이 파일은 생성물이다. 원본은 map-frame/index.template.html —
-     배포 스크립트가 __NAVER_KEY__ 를 치환한다. index.html 을 직접 고치지 말 것.
+  ⚠️ 이 파일은 생성물이다. 원본은 map-frame/index.template.html.
+
+  타일 원천 교체 지점은 아래 TILE_URL 한 곳. 네이버·카카오로 가려면 거기와 초기화만 바꾼다
+  (둘 다 도메인 검증을 쓰는데, 이 프레임은 진짜 origin 이라 콘솔에 등록만 하면 통과한다).
 -->
+<link rel="stylesheet" href="vendor/leaflet.css"/>
+<link rel="stylesheet" href="vendor/MarkerCluster.css"/>
+<link rel="stylesheet" href="vendor/MarkerCluster.Default.css"/>
 <style>
-  html, body { height: 100%; margin: 0; background: #F7F8FA;
-    font-family: Pretendard, 'Malgun Gothic', sans-serif; }
-  #map { position: absolute; inset: 0; }
+  html, body, #map { height: 100%; margin: 0; font-family: Pretendard, 'Malgun Gothic', sans-serif; }
+  body { background: #F7F8FA; }
+  .lp b { font-size: 14px }
+  .lp a { color: #0E8C72; font-weight: 700; text-decoration: none }
+  .lp .mm { color: #0E8C72; font-weight: 700; font-size: 12px }
+  .marker-cluster-small, .marker-cluster-small div { background: rgba(14,140,114,.25) }
+  .marker-cluster-small div div, .marker-cluster-medium div div { color: #fff }
+  .marker-cluster-medium, .marker-cluster-medium div { background: rgba(14,140,114,.45) }
+  .marker-cluster-large, .marker-cluster-large div { background: rgba(14,140,114,.65) }
+  .marker-cluster div { color: #fff; font-weight: 700 }
+  .pin { position: absolute; left: 0; top: 0; transform: translate(-50%,-100%); white-space: nowrap;
+    font-weight: 800; font-size: 11px; line-height: 1; padding: 5px 9px; border-radius: 13px;
+    border: 1.6px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.3); cursor: pointer }
+  .pin::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -4px; border: 4px solid transparent }
+  .pin.priced { background: #0E8C72; color: #fff } .pin.priced::after { border-top-color: #0E8C72 }
+  .pin.plain { background: #465059; color: #fff } .pin.plain::after { border-top-color: #465059 }
+  .me { width: 18px; height: 18px; border-radius: 50%; background: #2A7FFF; border: 3px solid #fff;
+    box-shadow: 0 0 0 4px rgba(42,127,255,.3) }
   #diag { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
-    text-align: center; padding: 24px; color: #465059; font-size: 14px; line-height: 1.7;
-    background: #F7F8FA; }
-  #diag.show { display: flex; }
-  #diag b { display: block; font-size: 15px; margin-bottom: 8px; color: #B42318; }
-  #diag code { display: block; margin-top: 6px; font-size: 12px; color: #6B7280; word-break: break-all; }
+    text-align: center; padding: 24px; color: #465059; font-size: 13px; line-height: 1.7;
+    background: #F7F8FA; z-index: 9999 }
+  #diag.show { display: flex }
+  #diag b { display: block; font-size: 15px; margin-bottom: 8px; color: #B42318 }
 </style>
 </head>
 <body>
 <div id="map"></div>
 <div id="diag"><div id="diagText"></div></div>
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/leaflet.markercluster.js"></script>
 <script>
 (function () {
   'use strict';
 
-  // 부모로 인정할 오리진. 이 페이지는 공개 URL 이라 **누구나 자기 사이트에 끼워 넣을 수 있다** —
-  // 그 경우 지도는 보여도 우리 데이터는 흐르지 않게 한다.
-  var ALLOWED_PARENTS = ['https://silverstay.co.kr', 'http://localhost:8081', 'http://127.0.0.1:8081'];
+  var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  var TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+  var TILE_MAXZOOM = 19;
 
-  var diag = document.getElementById('diag');
-  var diagText = document.getElementById('diagText');
+  // 이 페이지는 공개 URL 이라 누구나 자기 사이트에 끼워 넣을 수 있다.
+  // 그 경우 지도는 보여도 우리 데이터는 흐르지 않고, 우리도 그쪽으로 메시지를 보내지 않는다.
+  var ALLOWED_PARENTS = ['https://silverstay.co.kr', 'http://localhost:8081', 'http://127.0.0.1:8081'];
   function parentOrigin() {
     try { return document.referrer ? new URL(document.referrer).origin : ''; } catch (e) { return ''; }
   }
+  var PARENT = parentOrigin();
+  var TRUSTED = ALLOWED_PARENTS.indexOf(PARENT) >= 0;
+
   function post(msg) {
-    // ⚠️ targetOrigin 을 '*' 로 쓰지 않는다 — 남의 페이지에 박혀 있으면 그쪽으로 새어 나간다.
-    var o = parentOrigin();
-    if (ALLOWED_PARENTS.indexOf(o) < 0) return;
-    try { parent.postMessage(msg, o); } catch (e) { /* noop */ }
+    // targetOrigin 을 '*' 로 쓰지 않는다 — 남의 페이지에 박혀 있으면 그쪽으로 새어 나간다
+    // (예전 부모 코드가 현재 위치 좌표를 '*' 로 보내고 있었다).
+    if (!TRUSTED) return;
+    try { parent.postMessage(msg, PARENT); } catch (e) { /* noop */ }
   }
   function fail(title, detail) {
-    diagText.innerHTML = '<b>' + title + '</b><code>' + detail + '</code>';
-    diag.className = 'show';
+    document.getElementById('diagText').innerHTML = '<b>' + title + '</b>' + detail;
+    document.getElementById('diag').className = 'show';
     post({ type: 'error', title: title, detail: detail });
   }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  // onclick="__sel('…')" 는 HTML 속성 → JS 문자열 2단 컨텍스트다. esc() 로는 못 막는다
+  // (속성 값이 JS 파싱 전에 HTML 디코딩되어 &#39; 가 ' 로 되살아난다). uuid 문자만 남긴다.
+  function uuidOnly(s) { return String(s == null ? '' : s).replace(/[^0-9a-fA-F-]/g, '').slice(0, 36); }
 
-  // ⚠️ 네이버 v3 는 인증 실패를 **이 전역 함수**로 알린다. 스크립트 자체는 도메인과 무관하게
-  //    200 으로 내려온다(실측 333KB). 여기까지 와야 도메인 등록 여부를 알 수 있다.
-  window.navermap_authFailure = function () {
-    fail('지도 인증 실패', '이 도메인(' + location.origin + ')이 네이버 클라우드 콘솔의 Web 서비스 URL 에 등록되지 않았습니다.');
-  };
+  if (!window.L) { fail('지도 라이브러리 로드 실패', 'vendor/leaflet.js 를 불러오지 못했습니다.'); return; }
 
-  var KEY = '__NAVER_KEY__';
-  if (!KEY || KEY.indexOf('__') === 0) { fail('지도 키 없음', '배포 시 키가 치환되지 않았습니다.'); return; }
+  var map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([36.5, 127.8], 7);
+  L.tileLayer(TILE_URL, { maxZoom: TILE_MAXZOOM, attribution: TILE_ATTRIB }).addTo(map);
+  var cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60,
+    spiderfyOnMaxZoom: true, disableClusteringAtZoom: 16 });
+  map.addLayer(cluster);
 
-  var s = document.createElement('script');
-  s.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(KEY);
-  s.onerror = function () { fail('SDK 로드 실패', s.src); };
-  s.onload = function () {
-    if (!window.naver || !window.naver.maps) { fail('SDK 초기화 실패', 'naver.maps 가 없습니다.'); return; }
-    var map = new naver.maps.Map('map', {
-      center: new naver.maps.LatLng(36.5, 127.8),
-      zoom: 7,
-      mapDataControl: false,
-      logoControl: true,   // ⚠️ 네이버 로고는 약관상 가리지 않는다
-      scaleControl: true
-    });
-    window.__map = map;
-    post({ type: 'ready', origin: location.origin });
-    // 인증 실패가 비동기로 판정되는 경우가 있다 — 타일이 한 장도 안 붙으면 그것으로 판정한다.
-    setTimeout(function () {
-      var tiles = document.querySelectorAll('#map img').length;
-      post({ type: 'tiles', count: tiles });
-      if (tiles === 0) fail('타일 없음', '지도 객체는 만들어졌는데 타일이 0장입니다 — 도메인 검증 실패로 의심됩니다.');
-      else { document.title = '지도 정상 · 타일 ' + tiles + '장'; }
-    }, 4000);
-  };
-  document.head.appendChild(s);
+  var facs = [];
+  var meMarker = null;
+
+  function fmtMonthly(v) {
+    if (!v) return '';
+    if (v >= 100000000) return '월 ' + (Math.round(v / 10000000) / 10) + '억';
+    return '월 ' + Math.round(v / 10000) + '만원';
+  }
+  function pinIcon(f) {
+    var priced = !!f.mm;
+    var label = priced ? fmtMonthly(f.mm) : (f.cat || '시설');
+    return L.divIcon({ className: '', iconSize: [1, 1], iconAnchor: [0, 0],
+      html: '<div class="pin ' + (priced ? 'priced' : 'plain') + '">' + esc(label) + '</div>' });
+  }
+  function render(cat) {
+    cluster.clearLayers();
+    var shown = 0;
+    for (var i = 0; i < facs.length; i++) {
+      var f = facs[i];
+      if (cat && f.k !== cat) continue;
+      var m = L.marker([f.lat, f.lng], { icon: pinIcon(f) });
+      var mm = fmtMonthly(f.mm);
+      m.bindPopup('<div class="lp"><b>' + esc(f.name) + '</b><br>'
+        + '<span style="color:#777">' + (f.cat ? esc(f.cat) + ' · ' : '') + esc(f.region) + '</span>'
+        + (mm ? '<br><span class="mm">' + mm + '~</span> <span style="color:#999;font-size:10px">참고가</span>' : '')
+        + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>');
+      cluster.addLayer(m); shown++;
+    }
+    if (shown) { try { map.fitBounds(cluster.getBounds(), { padding: [40, 40], maxZoom: 12 }); } catch (e) {} }
+    post({ type: 'rendered', shown: shown });
+  }
+  window.__sel = function (id) { post({ type: 'facility', id: uuidOnly(id) }); };
+
+  function locateMe(lat, lng) {
+    if (meMarker) map.removeLayer(meMarker);
+    meMarker = L.marker([lat, lng], { zIndexOffset: 1000,
+      icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) });
+    meMarker.addTo(map);
+    map.setView([lat, lng], 13);
+  }
+
+  window.addEventListener('message', function (e) {
+    // 발신 오리진을 반드시 확인한다 — 이 프레임은 공개 URL 이라 아무나 메시지를 보낼 수 있다.
+    if (ALLOWED_PARENTS.indexOf(e.origin) < 0) return;
+    var d = e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'markers' && Array.isArray(d.items)) {
+      facs = d.items.filter(function (f) {
+        return f && typeof f.lat === 'number' && typeof f.lng === 'number' && Math.abs(f.lat) > 0.001;
+      });
+      render(d.cat || null);
+    } else if (d.type === 'filter') {
+      render(d.cat || null);
+    } else if (d.type === 'locate' && typeof d.lat === 'number' && typeof d.lng === 'number') {
+      locateMe(d.lat, d.lng);
+    } else if (d.type === 'single' && typeof d.lat === 'number' && typeof d.lng === 'number') {
+      // 시설 상세 미니맵 — 한 곳만. approx 면 핀 대신 반경 200m 원(비로그인 위치 흐리기 유지).
+      if (d.scrollWheelZoom === false) map.scrollWheelZoom.disable();
+      map.setView([d.lat, d.lng], d.approx ? 14 : 15);
+      var nm = String(d.name == null ? '' : d.name);
+      if (d.approx) {
+        L.circle([d.lat, d.lng], { radius: 200, color: '#0E8C72', weight: 2,
+          fillColor: '#0E8C72', fillOpacity: .15 }).addTo(map).bindPopup(esc(nm) + ' (대략 위치)');
+      } else {
+        L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 22],
+          html: '<div style="background:#0E8C72;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>' }) })
+          .addTo(map).bindPopup(esc(nm));
+      }
+    }
+  });
+
+  // 준비 완료를 알린다. 부모는 이 신호를 받은 뒤에 마커를 보낸다(로드 타이밍 경합 방지).
+  post({ type: 'ready', origin: location.origin });
+
+  // 타일이 한 장도 안 붙으면 조용히 깨진 것이다 — 눈에 보이게 만든다.
+  setTimeout(function () {
+    var tiles = document.querySelectorAll('#map img.leaflet-tile').length;
+    post({ type: 'tiles', count: tiles });
+    if (tiles === 0) fail('지도 타일 없음', '타일이 한 장도 로드되지 않았습니다 — 제공자 차단이나 네트워크 문제입니다.');
+  }, 5000);
 })();
 </script>
 </body>
