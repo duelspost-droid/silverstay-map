@@ -161,7 +161,11 @@
         catch (e) { /* noop */ }
       }
     }
-    post({ type: 'rendered', shown: shown });
+    // 화면을 눈으로 보기 어려울 때도 시야가 맞는지 **수치로** 확인할 수 있게 같이 보낸다.
+    var c = map.getCenter();
+    post({ type: 'rendered', shown: shown,
+      center: [Number(c.lat.toFixed(4)), Number(c.lng.toFixed(4))], zoom: map.getZoom(),
+      size: [map.getSize().x, map.getSize().y] });
   }
   window.__sel = function (id) { post({ type: 'facility', id: uuidOnly(id) }); };
 
