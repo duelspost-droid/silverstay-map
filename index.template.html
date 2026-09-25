@@ -67,7 +67,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 'naver-1';
+  var BUILD = 'naver-2';
   var NAVER_KEY = '__NAVER_KEY__';
   var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   var TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
@@ -344,7 +344,7 @@
   function ready(name) {
     provider = name;
     post({ type: 'ready', build: BUILD, provider: provider, origin: location.origin });
-    if (pending) { handle(pending); pending = null; }
+    if (pending) { try { handle(pending); } catch (err) { post({ type: 'error', title: '초기 메시지 처리 실패', detail: String(err && err.stack || err).slice(0, 400) }); } pending = null; }
     setTimeout(function () {
       var tiles = document.querySelectorAll('#map img').length;
       post({ type: 'tiles', provider: provider, count: tiles });
@@ -385,7 +385,10 @@
     var d = e.data;
     if (!d || typeof d !== 'object') return;
     if (!impl) { pending = d; return; } // 준비 전 도착분은 보관했다가 처리한다
-    handle(d);
+    // ⚠️ 메시지 처리 중 예외를 **삼키지 않는다.** 삼키면 지도가 그냥 비어 보이고 원인이 안 남는다
+    //    (2026-09-25: 네이버 전환 직후 마커가 안 그려졌는데 아무 신호도 없었다).
+    try { handle(d); }
+    catch (err) { post({ type: 'error', title: '메시지 처리 실패', detail: String(err && err.stack || err).slice(0, 400), msgType: d.type }); }
   });
 
   boot();
