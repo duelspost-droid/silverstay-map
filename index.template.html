@@ -10,20 +10,20 @@
 
   ⚠️ 이 페이지가 **부모 사이트와 다른 오리진**에 있는 것이 이 구조의 전부다.
      silverstay.co.kr 안에서 sandbox srcdoc 으로 지도를 띄우면 iframe 이 opaque origin 이 되고,
-     나가는 타일 요청에 Referer 가 실리지 않는다. OSM 은 그런 요청에 차단 안내 이미지를
-     **HTTP 200 으로** 돌려준다(실측: Referer 있으면 23,021바이트 진짜 타일 / 없으면 6,987바이트).
-     반대로 같은 오리진에서 sandbox 를 풀면 지도 코드가 부모 localStorage 의 Supabase 세션
-     (= 관리자 세션)에 닿는다. 별도 오리진이면 둘 다 해결된다 —
-     여기는 진짜 origin 이라 Referer 가 나가고, 부모와 다른 origin 이라 세션에는 못 닿는다.
+     나가는 요청에 Referer 가 실리지 않는다. 그러면 ① OSM 은 차단 이미지를 HTTP 200 으로 주고
+     ② 네이버·카카오는 도메인 검증에 실패한다. 반대로 같은 오리진에서 sandbox 를 풀면 지도
+     코드가 부모 localStorage 의 Supabase 세션(=관리자 세션)에 닿는다.
+     별도 오리진이면 둘 다 해결된다 — 진짜 origin 이라 검증을 통과하고, 세션에는 못 닿는다.
 
   ⚠️ 부모는 이 프레임을 반드시 **src=<이 URL>** 로 띄운다. srcdoc 으로 인라인하면
      allow-same-origin 이 **부모 오리진**을 물려줘(HTML 명세 origin 결정 3단계) 막으려던 것이 열린다.
-     src → srcdoc 되돌리기는 그 자체로 보안 사고다.
 
-  ⚠️ 이 파일은 생성물이다. 원본은 map-frame/index.template.html.
+  ⚠️ 이 파일은 생성물이다. 원본은 map-frame/index.template.html (배포가 __NAVER_KEY__ 를 치환).
 
-  타일 원천 교체 지점은 아래 TILE_URL 한 곳. 네이버·카카오로 가려면 거기와 초기화만 바꾼다
-  (둘 다 도메인 검증을 쓰는데, 이 프레임은 진짜 origin 이라 콘솔에 등록만 하면 통과한다).
+  제공자: 기본 **네이버 지도**(NCP Maps, Dynamic Map 월 600만 회 무료).
+  ⚠️ 인증 실패·로드 실패 시 **OSM(Leaflet)으로 자동 폴백**한다. 한 제공자에만 걸면 그쪽이
+     조용히 죽을 때 지도가 통째로 사라진다 — 2026-09-25 에 실제로 그렇게 됐다.
+     강제 전환: ?provider=leaflet / ?provider=naver (폴백 경로를 실제로 시험해 볼 수 있어야 한다).
 -->
 <link rel="stylesheet" href="vendor/leaflet.css"/>
 <link rel="stylesheet" href="vendor/MarkerCluster.css"/>
@@ -31,6 +31,17 @@
 <style>
   html, body, #map { height: 100%; margin: 0; font-family: Pretendard, 'Malgun Gothic', sans-serif; }
   body { background: #F7F8FA; }
+  .pin { position: absolute; left: 0; top: 0; transform: translate(-50%,-100%); white-space: nowrap;
+    font-weight: 800; font-size: 11px; line-height: 1; padding: 5px 9px; border-radius: 13px;
+    border: 1.6px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.3); cursor: pointer }
+  .pin::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -4px; border: 4px solid transparent }
+  .pin.priced { background: #0E8C72; color: #fff } .pin.priced::after { border-top-color: #0E8C72 }
+  .pin.plain { background: #465059; color: #fff } .pin.plain::after { border-top-color: #465059 }
+  .ncluster { display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;
+    font-size: 13px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,.35); cursor: pointer }
+  .me { width: 18px; height: 18px; border-radius: 50%; background: #2A7FFF; border: 3px solid #fff;
+    box-shadow: 0 0 0 4px rgba(42,127,255,.3) }
+  .lp { font-size: 13px; line-height: 1.5; padding: 10px 12px; min-width: 150px }
   .lp b { font-size: 14px }
   .lp a { color: #0E8C72; font-weight: 700; text-decoration: none }
   .lp .mm { color: #0E8C72; font-weight: 700; font-size: 12px }
@@ -39,14 +50,6 @@
   .marker-cluster-medium, .marker-cluster-medium div { background: rgba(14,140,114,.45) }
   .marker-cluster-large, .marker-cluster-large div { background: rgba(14,140,114,.65) }
   .marker-cluster div { color: #fff; font-weight: 700 }
-  .pin { position: absolute; left: 0; top: 0; transform: translate(-50%,-100%); white-space: nowrap;
-    font-weight: 800; font-size: 11px; line-height: 1; padding: 5px 9px; border-radius: 13px;
-    border: 1.6px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.3); cursor: pointer }
-  .pin::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -4px; border: 4px solid transparent }
-  .pin.priced { background: #0E8C72; color: #fff } .pin.priced::after { border-top-color: #0E8C72 }
-  .pin.plain { background: #465059; color: #fff } .pin.plain::after { border-top-color: #465059 }
-  .me { width: 18px; height: 18px; border-radius: 50%; background: #2A7FFF; border: 3px solid #fff;
-    box-shadow: 0 0 0 4px rgba(42,127,255,.3) }
   #diag { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     text-align: center; padding: 24px; color: #465059; font-size: 13px; line-height: 1.7;
     background: #F7F8FA; z-index: 9999 }
@@ -59,13 +62,15 @@
 <div id="diag"><div id="diagText"></div></div>
 <script src="vendor/leaflet.js"></script>
 <script src="vendor/leaflet.markercluster.js"></script>
+<script src="vendor/marker-clustering.js"></script>
 <script>
 (function () {
   'use strict';
 
+  var BUILD = 'naver-1';
+  var NAVER_KEY = '__NAVER_KEY__';
   var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   var TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
-  var TILE_MAXZOOM = 19;
 
   // 이 페이지는 공개 URL 이라 누구나 자기 사이트에 끼워 넣을 수 있다.
   // 그 경우 지도는 보여도 우리 데이터는 흐르지 않고, 우리도 그쪽으로 메시지를 보내지 않는다.
@@ -75,10 +80,9 @@
   }
   var PARENT = parentOrigin();
   var TRUSTED = ALLOWED_PARENTS.indexOf(PARENT) >= 0;
-
   function post(msg) {
-    // targetOrigin 을 '*' 로 쓰지 않는다 — 남의 페이지에 박혀 있으면 그쪽으로 새어 나간다
-    // (예전 부모 코드가 현재 위치 좌표를 '*' 로 보내고 있었다).
+    // targetOrigin 에 '*' 를 쓰지 않는다 — 남의 페이지에 박혀 있으면 그쪽으로 새어 나간다
+    // (예전 부모 코드가 사용자의 현재 위치 좌표를 '*' 로 보내고 있었다).
     if (!TRUSTED) return;
     try { parent.postMessage(msg, PARENT); } catch (e) { /* noop */ }
   }
@@ -94,113 +98,285 @@
   // onclick="__sel('…')" 는 HTML 속성 → JS 문자열 2단 컨텍스트다. esc() 로는 못 막는다
   // (속성 값이 JS 파싱 전에 HTML 디코딩되어 &#39; 가 ' 로 되살아난다). uuid 문자만 남긴다.
   function uuidOnly(s) { return String(s == null ? '' : s).replace(/[^0-9a-fA-F-]/g, '').slice(0, 36); }
-
-  if (!window.L) { fail('지도 라이브러리 로드 실패', 'vendor/leaflet.js 를 불러오지 못했습니다.'); return; }
-
-  var map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([36.5, 127.8], 7);
-  L.tileLayer(TILE_URL, { maxZoom: TILE_MAXZOOM, attribution: TILE_ATTRIB }).addTo(map);
-  var cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60,
-    spiderfyOnMaxZoom: true, disableClusteringAtZoom: 16 });
-  map.addLayer(cluster);
-
-  var facs = [];
-  var meMarker = null;
-
-  // 컨테이너 크기가 늦게 확정되는 경우(모바일 주소창, 부모 레이아웃, 폰트 로드)를 모두 잡는다.
-  // ⚠️ 컨테이너가 **크기 0일 때** 렌더가 돌면 fitBounds 가 계산을 못 한다(2026-09-25 /list 실측:
-  //    size [0,0], zoom 12 로 엉뚱한 곳에 고정). 크기가 생기는 순간 다시 맞춰야 한다.
-  //    단, 사용자가 이미 지도를 움직였으면 건드리지 않는다 — 보던 위치를 빼앗지 않는다.
-  var curCat = null, fitting = false, userMoved = false, lastFitW = 0, lastFitH = 0;
-  map.on('dragstart', function () { if (!fitting) userMoved = true; });
-  map.on('zoomstart', function () { if (!fitting) userMoved = true; });
-  function refit() {
-    try {
-      map.invalidateSize(false);
-      var s = map.getSize();
-      if (!userMoved && facs.length && s.x > 0 && s.y > 0 && (lastFitW === 0 || lastFitH === 0)) {
-        fitToData(curCat);
-        var c2 = map.getCenter();
-        // 크기 0 에서 렌더된 지도를 되살렸다는 사실을 남긴다 — 안 보이면 프레임이 낡은 것이다.
-        post({ type: 'refit', size: [s.x, s.y], zoom: map.getZoom(),
-          center: [Number(c2.lat.toFixed(4)), Number(c2.lng.toFixed(4))] });
-      }
-    } catch (e) { /* noop */ }
-  }
-  window.addEventListener('resize', refit);
-  window.addEventListener('orientationchange', refit);
-  setTimeout(refit, 150); setTimeout(refit, 600); setTimeout(refit, 1500);
-  if (window.ResizeObserver) { try { new ResizeObserver(refit).observe(document.body); } catch (e) { /* noop */ } }
+  window.__sel = function (id) { post({ type: 'facility', id: uuidOnly(id) }); };
 
   function fmtMonthly(v) {
     if (!v) return '';
     if (v >= 100000000) return '월 ' + (Math.round(v / 10000000) / 10) + '억';
     return '월 ' + Math.round(v / 10000) + '만원';
   }
-  function pinIcon(f) {
+  function pinHtml(f) {
     var priced = !!f.mm;
-    var label = priced ? fmtMonthly(f.mm) : (f.cat || '시설');
-    return L.divIcon({ className: '', iconSize: [1, 1], iconAnchor: [0, 0],
-      html: '<div class="pin ' + (priced ? 'priced' : 'plain') + '">' + esc(label) + '</div>' });
+    return '<div class="pin ' + (priced ? 'priced' : 'plain') + '">'
+      + esc(priced ? fmtMonthly(f.mm) : (f.cat || '시설')) + '</div>';
   }
-  function render(cat) {
-    curCat = cat || null;
-    // ⚠️ fitBounds 전에 반드시 크기를 다시 잰다. iframe 이 배치되기 전에 지도가 만들어지면
-    //    Leaflet 이 컨테이너를 0 또는 엉뚱한 크기로 알고 있어 시야가 엉뚱한 곳에 맞춰지고
-    //    타일도 일부만 붙는다(2026-09-25 모바일에서 실제로 그렇게 나왔다).
-    map.invalidateSize(false);
-    cluster.clearLayers();
-    var shown = 0;
+  function popupHtml(f) {
+    var mm = fmtMonthly(f.mm);
+    return '<div class="lp"><b>' + esc(f.name) + '</b><br>'
+      + '<span style="color:#777">' + (f.cat ? esc(f.cat) + ' · ' : '') + esc(f.region) + '</span>'
+      + (mm ? '<br><span class="mm">' + mm + '~</span> <span style="color:#999;font-size:10px">참고가</span>' : '')
+      + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>';
+  }
+
+  // ── 공통 상태 ────────────────────────────────────────────────────
+  var facs = [], curCat = null, provider = null;
+  var userMoved = false, fitting = false, lastFitW = 0, lastFitH = 0;
+  var impl = null; // { render, locate, single, resize, size, view }
+
+  function boundsOf(cat) {
+    var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, n = 0;
     for (var i = 0; i < facs.length; i++) {
       var f = facs[i];
       if (cat && f.k !== cat) continue;
-      var m = L.marker([f.lat, f.lng], { icon: pinIcon(f) });
-      var mm = fmtMonthly(f.mm);
-      m.bindPopup('<div class="lp"><b>' + esc(f.name) + '</b><br>'
-        + '<span style="color:#777">' + (f.cat ? esc(f.cat) + ' · ' : '') + esc(f.region) + '</span>'
-        + (mm ? '<br><span class="mm">' + mm + '~</span> <span style="color:#999;font-size:10px">참고가</span>' : '')
-        + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>');
-      cluster.addLayer(m); shown++;
+      if (f.lat < minLat) minLat = f.lat;
+      if (f.lat > maxLat) maxLat = f.lat;
+      if (f.lng < minLng) minLng = f.lng;
+      if (f.lng > maxLng) maxLng = f.lng;
+      n++;
     }
-    // ⚠️ 시야는 **데이터에서 직접** 계산한다. cluster.getBounds() 를 쓰면 안 된다 —
-    //    markercluster 의 chunkedLoading 은 마커를 여러 프레임에 나눠 넣으므로, 호출 시점에
-    //    **첫 청크만 들어가 있으면 그 몇 개의 범위**로 맞춰진다. 2026-09-25 모바일에서 실제로
-    //    전국 대신 강원 산간으로 확대됐다(데스크톱은 타이밍이 달라 우연히 맞아 넘어갔다).
-    if (shown) fitToData(cat);
-    var c = map.getCenter();
-    post({ type: 'rendered', shown: shown,
-      center: [Number(c.lat.toFixed(4)), Number(c.lng.toFixed(4))], zoom: map.getZoom(),
-      size: [map.getSize().x, map.getSize().y] });
+    return n && minLat <= maxLat ? { minLat: minLat, maxLat: maxLat, minLng: minLng, maxLng: maxLng, n: n } : null;
   }
 
-  function fitToData(cat) {
-    {
-      var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-      for (var j = 0; j < facs.length; j++) {
-        var g = facs[j];
-        if (cat && g.k !== cat) continue;
-        if (g.lat < minLat) minLat = g.lat;
-        if (g.lat > maxLat) maxLat = g.lat;
-        if (g.lng < minLng) minLng = g.lng;
-        if (g.lng > maxLng) maxLng = g.lng;
+  function reportRendered(shown) {
+    var v = impl.view();
+    post({ type: 'rendered', provider: provider, shown: shown, center: v.center, zoom: v.zoom, size: v.size });
+  }
+
+  // 컨테이너 크기가 늦게 확정되는 경우(모바일 주소창, 부모 레이아웃 전환)를 모두 잡는다.
+  // ⚠️ 크기 0 에서 렌더되면 시야 계산이 불가능하다 — 크기가 생기는 순간 다시 맞춘다.
+  //    단, 사용자가 이미 움직였으면 건드리지 않는다(보던 위치를 빼앗지 않는다).
+  function refit() {
+    if (!impl) return;
+    impl.resize();
+    var s = impl.size();
+    if (!userMoved && facs.length && s[0] > 0 && s[1] > 0 && (lastFitW === 0 || lastFitH === 0)) {
+      impl.fit(curCat);
+      var v = impl.view();
+      post({ type: 'refit', size: v.size, zoom: v.zoom, center: v.center });
+    }
+  }
+  window.addEventListener('resize', refit);
+  window.addEventListener('orientationchange', refit);
+  setTimeout(refit, 150); setTimeout(refit, 600); setTimeout(refit, 1500);
+  if (window.ResizeObserver) { try { new ResizeObserver(refit).observe(document.body); } catch (e) { /* noop */ } }
+
+  // ── 네이버 구현 ──────────────────────────────────────────────────
+  function initNaver(cb) {
+    if (!NAVER_KEY || NAVER_KEY.indexOf('__') === 0) { cb(new Error('키 없음')); return; }
+    var done = false;
+    // ⚠️ 인증 실패는 이 전역 훅으로만 온다. 스크립트 자체는 도메인과 무관하게 200 으로 내려오고
+    //    (실측 333KB), 지도 객체도 만들어진다 — 여기까지 와야 등록 여부를 알 수 있다.
+    window.navermap_authFailure = function () {
+      if (done) { fail('지도 인증 실패', 'NCP 콘솔의 Web 서비스 URL 에 ' + location.origin + ' 등록을 확인하세요.'); return; }
+      done = true; cb(new Error('authFailure'));
+    };
+    var s = document.createElement('script');
+    s.src = 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=' + encodeURIComponent(NAVER_KEY);
+    s.onerror = function () { if (!done) { done = true; cb(new Error('SDK 로드 실패')); } };
+    s.onload = function () {
+      if (done) return;
+      if (!window.naver || !window.naver.maps) { done = true; cb(new Error('naver.maps 없음')); return; }
+      var map = new naver.maps.Map('map', {
+        center: new naver.maps.LatLng(36.5, 127.8), zoom: 7,
+        mapDataControl: false, scaleControl: true, logoControl: true, // ⚠️ 로고는 약관상 가린다
+      });
+      naver.maps.Event.addListener(map, 'dragstart', function () { if (!fitting) userMoved = true; });
+      naver.maps.Event.addListener(map, 'zoom_start', function () { if (!fitting) userMoved = true; });
+      var markers = [], cluster = null, meMarker = null, info = null;
+      function clear() {
+        markers.forEach(function (m) { m.setMap(null); });
+        markers = [];
+        if (cluster) { cluster.setMap(null); cluster = null; }
       }
-      if (minLat <= maxLat) {
-        try {
+      impl = {
+        size: function () { var s2 = map.getSize(); return [s2.width, s2.height]; },
+        view: function () {
+          var c = map.getCenter(), s2 = map.getSize();
+          return { center: [Number(c.lat().toFixed(4)), Number(c.lng().toFixed(4))], zoom: map.getZoom(), size: [s2.width, s2.height] };
+        },
+        resize: function () { try { naver.maps.Event.trigger(map, 'resize'); } catch (e) { /* noop */ } },
+        fit: function (cat) {
+          var b = boundsOf(cat); if (!b) return;
           fitting = true;
-          map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [40, 40], maxZoom: 12 });
-          var sz = map.getSize(); lastFitW = sz.x; lastFitH = sz.y;
+          map.fitBounds(new naver.maps.LatLngBounds(
+            new naver.maps.LatLng(b.minLat, b.minLng), new naver.maps.LatLng(b.maxLat, b.maxLng)));
+          var s2 = map.getSize(); lastFitW = s2.width; lastFitH = s2.height;
           setTimeout(function () { fitting = false; }, 400);
-        } catch (e) { fitting = false; }
-      }
-    }
+        },
+        render: function (cat) {
+          clear();
+          var shown = 0;
+          for (var i = 0; i < facs.length; i++) {
+            var f = facs[i];
+            if (cat && f.k !== cat) continue;
+            var mk = new naver.maps.Marker({
+              position: new naver.maps.LatLng(f.lat, f.lng),
+              icon: { content: pinHtml(f), anchor: new naver.maps.Point(0, 0) },
+            });
+            (function (fac, marker) {
+              naver.maps.Event.addListener(marker, 'click', function () {
+                if (info) info.close();
+                info = new naver.maps.InfoWindow({ content: popupHtml(fac), borderWidth: 0, disableAnchor: false });
+                info.open(map, marker);
+              });
+            })(f, mk);
+            markers.push(mk); shown++;
+          }
+          var MC = window.MarkerClustering;
+          if (MC && markers.length) {
+            var icon = function (size, bg) {
+              return { content: '<div class="ncluster" style="width:' + size + 'px;height:' + size + 'px;background:' + bg + '"><span></span></div>',
+                size: new naver.maps.Size(size, size), anchor: new naver.maps.Point(size / 2, size / 2) };
+            };
+            cluster = new MC({
+              map: map, markers: markers, disableClickZoom: false, minClusterSize: 2, maxZoom: 13, gridSize: 120,
+              indexGenerator: [10, 50, 200, 1000],
+              icons: [icon(36, 'rgba(14,140,114,.85)'), icon(44, 'rgba(14,140,114,.9)'),
+                icon(52, 'rgba(11,90,60,.92)'), icon(62, 'rgba(11,90,60,.95)')],
+              stylingFunction: function (cm, count) {
+                var el = cm.getElement() && cm.getElement().querySelector('span');
+                if (el) el.innerText = String(count);
+              },
+            });
+          } else {
+            markers.forEach(function (m) { m.setMap(map); });
+          }
+          if (shown) impl.fit(cat);
+          return shown;
+        },
+        locate: function (lat, lng) {
+          if (meMarker) meMarker.setMap(null);
+          meMarker = new naver.maps.Marker({ position: new naver.maps.LatLng(lat, lng), map: map, zIndex: 1000,
+            icon: { content: '<div class="me"></div>', anchor: new naver.maps.Point(9, 9) } });
+          map.setCenter(new naver.maps.LatLng(lat, lng)); map.setZoom(14);
+        },
+        single: function (d) {
+          map.setOptions('scrollWheel', d.scrollWheelZoom !== false);
+          impl.resize();
+          var ll = new naver.maps.LatLng(d.lat, d.lng);
+          map.setCenter(ll); map.setZoom(d.approx ? 14 : 16);
+          lastFitW = 1; lastFitH = 1; // 단일 지점은 재조정 대상이 아니다
+          if (d.approx) {
+            new naver.maps.Circle({ map: map, center: ll, radius: 200,
+              strokeColor: '#0E8C72', strokeWeight: 2, fillColor: '#0E8C72', fillOpacity: 0.15 });
+          } else {
+            new naver.maps.Marker({ position: ll, map: map, icon: { content:
+              '<div style="background:#0E8C72;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>',
+              anchor: new naver.maps.Point(11, 22) } });
+          }
+        },
+      };
+      done = true;
+      cb(null);
+    };
+    document.head.appendChild(s);
   }
-  window.__sel = function (id) { post({ type: 'facility', id: uuidOnly(id) }); };
 
-  function locateMe(lat, lng) {
-    if (meMarker) map.removeLayer(meMarker);
-    meMarker = L.marker([lat, lng], { zIndexOffset: 1000,
-      icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) });
-    meMarker.addTo(map);
-    map.setView([lat, lng], 13);
+  // ── Leaflet(OSM) 폴백 구현 ───────────────────────────────────────
+  // ⚠️ 이 경로는 장식이 아니다. 네이버가 죽으면 여기로 떨어져야 지도가 남는다.
+  //    ?provider=leaflet 으로 강제 진입해 **실제로 시험할 수 있게** 해 둔다.
+  function initLeaflet(cb) {
+    if (!window.L) { cb(new Error('leaflet 없음')); return; }
+    var map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([36.5, 127.8], 7);
+    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTRIB }).addTo(map);
+    var cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60,
+      spiderfyOnMaxZoom: true, disableClusteringAtZoom: 16 });
+    map.addLayer(cluster);
+    map.on('dragstart', function () { if (!fitting) userMoved = true; });
+    map.on('zoomstart', function () { if (!fitting) userMoved = true; });
+    var meMarker = null;
+    impl = {
+      size: function () { var s = map.getSize(); return [s.x, s.y]; },
+      view: function () {
+        var c = map.getCenter(), s = map.getSize();
+        return { center: [Number(c.lat.toFixed(4)), Number(c.lng.toFixed(4))], zoom: map.getZoom(), size: [s.x, s.y] };
+      },
+      resize: function () { try { map.invalidateSize(false); } catch (e) { /* noop */ } },
+      fit: function (cat) {
+        var b = boundsOf(cat); if (!b) return;
+        fitting = true;
+        try { map.fitBounds([[b.minLat, b.minLng], [b.maxLat, b.maxLng]], { padding: [40, 40], maxZoom: 12 }); } catch (e) { /* noop */ }
+        var s = map.getSize(); lastFitW = s.x; lastFitH = s.y;
+        setTimeout(function () { fitting = false; }, 400);
+      },
+      render: function (cat) {
+        cluster.clearLayers();
+        var shown = 0;
+        for (var i = 0; i < facs.length; i++) {
+          var f = facs[i];
+          if (cat && f.k !== cat) continue;
+          var m = L.marker([f.lat, f.lng], { icon: L.divIcon({ className: '', html: pinHtml(f), iconSize: [1, 1], iconAnchor: [0, 0] }) });
+          m.bindPopup(popupHtml(f));
+          cluster.addLayer(m); shown++;
+        }
+        if (shown) impl.fit(cat);
+        return shown;
+      },
+      locate: function (lat, lng) {
+        if (meMarker) map.removeLayer(meMarker);
+        meMarker = L.marker([lat, lng], { zIndexOffset: 1000,
+          icon: L.divIcon({ className: '', html: '<div class="me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map);
+        map.setView([lat, lng], 13);
+      },
+      single: function (d) {
+        if (d.scrollWheelZoom === false) map.scrollWheelZoom.disable();
+        map.invalidateSize(false);
+        map.setView([d.lat, d.lng], d.approx ? 14 : 15);
+        lastFitW = 1; lastFitH = 1;
+        var nm = String(d.name == null ? '' : d.name);
+        if (d.approx) {
+          L.circle([d.lat, d.lng], { radius: 200, color: '#0E8C72', weight: 2, fillColor: '#0E8C72', fillOpacity: .15 })
+            .addTo(map).bindPopup(esc(nm) + ' (대략 위치)');
+        } else {
+          L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 22],
+            html: '<div style="background:#0E8C72;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>' }) })
+            .addTo(map).bindPopup(esc(nm));
+        }
+      },
+    };
+    cb(null);
+  }
+
+  // ── 부팅 ────────────────────────────────────────────────────────
+  var forced = (location.search.match(/[?&]provider=(naver|leaflet)/) || [])[1];
+  var pending = null; // 준비 전에 도착한 메시지
+
+  function ready(name) {
+    provider = name;
+    post({ type: 'ready', build: BUILD, provider: provider, origin: location.origin });
+    if (pending) { handle(pending); pending = null; }
+    setTimeout(function () {
+      var tiles = document.querySelectorAll('#map img').length;
+      post({ type: 'tiles', provider: provider, count: tiles });
+      if (tiles === 0) fail('지도 타일 없음', '타일이 한 장도 로드되지 않았습니다(' + provider + ').');
+    }, 5000);
+  }
+
+  function boot() {
+    if (forced === 'leaflet') { initLeaflet(function (e) { e ? fail('지도 초기화 실패', String(e.message || e)) : ready('leaflet'); }); return; }
+    initNaver(function (err) {
+      if (!err) { ready('naver'); return; }
+      // ⚠️ 폴백. 네이버가 막혀도 지도는 남아야 한다 — 다만 조용히 넘어가지 않고 부모에 알린다.
+      post({ type: 'fallback', from: 'naver', reason: String(err.message || err) });
+      initLeaflet(function (e2) { e2 ? fail('지도 초기화 실패', String(e2.message || e2)) : ready('leaflet'); });
+    });
+  }
+
+  function handle(d) {
+    if (d.type === 'markers' && Array.isArray(d.items)) {
+      facs = d.items.filter(function (f) {
+        return f && typeof f.lat === 'number' && typeof f.lng === 'number' && Math.abs(f.lat) > 0.001;
+      });
+      curCat = d.cat || null;
+      reportRendered(impl.render(curCat));
+    } else if (d.type === 'filter') {
+      curCat = d.cat || null;
+      reportRendered(impl.render(curCat));
+    } else if (d.type === 'locate' && typeof d.lat === 'number' && typeof d.lng === 'number') {
+      impl.locate(d.lat, d.lng);
+    } else if (d.type === 'single' && typeof d.lat === 'number' && typeof d.lng === 'number') {
+      impl.single(d);
+    }
   }
 
   window.addEventListener('message', function (e) {
@@ -208,56 +384,11 @@
     if (ALLOWED_PARENTS.indexOf(e.origin) < 0) return;
     var d = e.data;
     if (!d || typeof d !== 'object') return;
-    if (d.type === 'markers' && Array.isArray(d.items)) {
-      facs = d.items.filter(function (f) {
-        return f && typeof f.lat === 'number' && typeof f.lng === 'number' && Math.abs(f.lat) > 0.001;
-      });
-      render(d.cat || null);
-    } else if (d.type === 'filter') {
-      render(d.cat || null);
-    } else if (d.type === 'locate' && typeof d.lat === 'number' && typeof d.lng === 'number') {
-      locateMe(d.lat, d.lng);
-    } else if (d.type === 'single' && typeof d.lat === 'number' && typeof d.lng === 'number') {
-      // 시설 상세 미니맵 — 한 곳만. approx 면 핀 대신 반경 200m 원(비로그인 위치 흐리기 유지).
-      if (d.scrollWheelZoom === false) map.scrollWheelZoom.disable();
-      map.invalidateSize(false);
-      map.setView([d.lat, d.lng], d.approx ? 14 : 15);
-      var nm = String(d.name == null ? '' : d.name);
-      if (d.approx) {
-        L.circle([d.lat, d.lng], { radius: 200, color: '#0E8C72', weight: 2,
-          fillColor: '#0E8C72', fillOpacity: .15 }).addTo(map).bindPopup(esc(nm) + ' (대략 위치)');
-      } else {
-        L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 22],
-          html: '<div style="background:#0E8C72;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>' }) })
-          .addTo(map).bindPopup(esc(nm));
-      }
-    }
+    if (!impl) { pending = d; return; } // 준비 전 도착분은 보관했다가 처리한다
+    handle(d);
   });
 
-  // 준비 완료를 알린다. 부모는 이 신호를 받은 뒤에 마커를 보낸다(로드 타이밍 경합 방지).
-  post({ type: 'ready', origin: location.origin, build: 'refit-2' });
-
-  // 타일 실패를 **수치로** 잡는다. 이 버그 유형(차단을 HTTP 200 + 안내 이미지로 주는 것)은
-  // 눈으로도 상태코드로도 안 보인다 — 바이트 수로만 구분된다(진짜 23KB / 차단 7KB).
-  var tileErrors = 0, tileLoads = 0;
-  map.on('tileerror', function () { tileErrors++; });
-  map.on('tileload', function () { tileLoads++; });
-  setTimeout(function () {
-    var url = TILE_URL.replace('{z}', '7').replace('{x}', '109').replace('{y}', '49') + '?probe=' + Date.now();
-    fetch(url).then(function (r) { return r.arrayBuffer().then(function (b) {
-      post({ type: 'tileProbe', status: r.status, bytes: b.byteLength,
-        verdict: b.byteLength > 15000 ? 'real' : 'blocked', loads: tileLoads, errors: tileErrors });
-    }); }).catch(function (e) {
-      post({ type: 'tileProbe', error: String(e), loads: tileLoads, errors: tileErrors });
-    });
-  }, 3000);
-
-  // 타일이 한 장도 안 붙으면 조용히 깨진 것이다 — 눈에 보이게 만든다.
-  setTimeout(function () {
-    var tiles = document.querySelectorAll('#map img.leaflet-tile').length;
-    post({ type: 'tiles', count: tiles });
-    if (tiles === 0) fail('지도 타일 없음', '타일이 한 장도 로드되지 않았습니다 — 제공자 차단이나 네트워크 문제입니다.');
-  }, 5000);
+  boot();
 })();
 </script>
 </body>
