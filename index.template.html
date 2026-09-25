@@ -107,7 +107,19 @@
   var meMarker = null;
 
   // 컨테이너 크기가 늦게 확정되는 경우(모바일 주소창, 부모 레이아웃, 폰트 로드)를 모두 잡는다.
-  function refit() { try { map.invalidateSize(false); } catch (e) { /* noop */ } }
+  // ⚠️ 컨테이너가 **크기 0일 때** 렌더가 돌면 fitBounds 가 계산을 못 한다(2026-09-25 /list 실측:
+  //    size [0,0], zoom 12 로 엉뚱한 곳에 고정). 크기가 생기는 순간 다시 맞춰야 한다.
+  //    단, 사용자가 이미 지도를 움직였으면 건드리지 않는다 — 보던 위치를 빼앗지 않는다.
+  var curCat = null, fitting = false, userMoved = false, lastFitW = 0, lastFitH = 0;
+  map.on('dragstart', function () { if (!fitting) userMoved = true; });
+  map.on('zoomstart', function () { if (!fitting) userMoved = true; });
+  function refit() {
+    try {
+      map.invalidateSize(false);
+      var s = map.getSize();
+      if (!userMoved && facs.length && s.x > 0 && s.y > 0 && (lastFitW === 0 || lastFitH === 0)) fitToData(curCat);
+    } catch (e) { /* noop */ }
+  }
   window.addEventListener('resize', refit);
   window.addEventListener('orientationchange', refit);
   setTimeout(refit, 150); setTimeout(refit, 600); setTimeout(refit, 1500);
@@ -125,6 +137,7 @@
       html: '<div class="pin ' + (priced ? 'priced' : 'plain') + '">' + esc(label) + '</div>' });
   }
   function render(cat) {
+    curCat = cat || null;
     // ⚠️ fitBounds 전에 반드시 크기를 다시 잰다. iframe 이 배치되기 전에 지도가 만들어지면
     //    Leaflet 이 컨테이너를 0 또는 엉뚱한 크기로 알고 있어 시야가 엉뚱한 곳에 맞춰지고
     //    타일도 일부만 붙는다(2026-09-25 모바일에서 실제로 그렇게 나왔다).
@@ -146,7 +159,15 @@
     //    markercluster 의 chunkedLoading 은 마커를 여러 프레임에 나눠 넣으므로, 호출 시점에
     //    **첫 청크만 들어가 있으면 그 몇 개의 범위**로 맞춰진다. 2026-09-25 모바일에서 실제로
     //    전국 대신 강원 산간으로 확대됐다(데스크톱은 타이밍이 달라 우연히 맞아 넘어갔다).
-    if (shown) {
+    if (shown) fitToData(cat);
+    var c = map.getCenter();
+    post({ type: 'rendered', shown: shown,
+      center: [Number(c.lat.toFixed(4)), Number(c.lng.toFixed(4))], zoom: map.getZoom(),
+      size: [map.getSize().x, map.getSize().y] });
+  }
+
+  function fitToData(cat) {
+    {
       var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
       for (var j = 0; j < facs.length; j++) {
         var g = facs[j];
@@ -157,15 +178,14 @@
         if (g.lng > maxLng) maxLng = g.lng;
       }
       if (minLat <= maxLat) {
-        try { map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [40, 40], maxZoom: 12 }); }
-        catch (e) { /* noop */ }
+        try {
+          fitting = true;
+          map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [40, 40], maxZoom: 12 });
+          var sz = map.getSize(); lastFitW = sz.x; lastFitH = sz.y;
+          setTimeout(function () { fitting = false; }, 400);
+        } catch (e) { fitting = false; }
       }
     }
-    // 화면을 눈으로 보기 어려울 때도 시야가 맞는지 **수치로** 확인할 수 있게 같이 보낸다.
-    var c = map.getCenter();
-    post({ type: 'rendered', shown: shown,
-      center: [Number(c.lat.toFixed(4)), Number(c.lng.toFixed(4))], zoom: map.getZoom(),
-      size: [map.getSize().x, map.getSize().y] });
   }
   window.__sel = function (id) { post({ type: 'facility', id: uuidOnly(id) }); };
 
