@@ -142,7 +142,25 @@
         + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>');
       cluster.addLayer(m); shown++;
     }
-    if (shown) { try { map.fitBounds(cluster.getBounds(), { padding: [40, 40], maxZoom: 12 }); } catch (e) {} }
+    // ⚠️ 시야는 **데이터에서 직접** 계산한다. cluster.getBounds() 를 쓰면 안 된다 —
+    //    markercluster 의 chunkedLoading 은 마커를 여러 프레임에 나눠 넣으므로, 호출 시점에
+    //    **첫 청크만 들어가 있으면 그 몇 개의 범위**로 맞춰진다. 2026-09-25 모바일에서 실제로
+    //    전국 대신 강원 산간으로 확대됐다(데스크톱은 타이밍이 달라 우연히 맞아 넘어갔다).
+    if (shown) {
+      var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+      for (var j = 0; j < facs.length; j++) {
+        var g = facs[j];
+        if (cat && g.k !== cat) continue;
+        if (g.lat < minLat) minLat = g.lat;
+        if (g.lat > maxLat) maxLat = g.lat;
+        if (g.lng < minLng) minLng = g.lng;
+        if (g.lng > maxLng) maxLng = g.lng;
+      }
+      if (minLat <= maxLat) {
+        try { map.fitBounds([[minLat, minLng], [maxLat, maxLng]], { padding: [40, 40], maxZoom: 12 }); }
+        catch (e) { /* noop */ }
+      }
+    }
     post({ type: 'rendered', shown: shown });
   }
   window.__sel = function (id) { post({ type: 'facility', id: uuidOnly(id) }); };
