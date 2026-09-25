@@ -62,12 +62,14 @@
 <div id="diag"><div id="diagText"></div></div>
 <script src="vendor/leaflet.js"></script>
 <script src="vendor/leaflet.markercluster.js"></script>
-<script src="vendor/marker-clustering.js"></script>
+<!-- ⚠️ vendor/marker-clustering.js 는 여기서 읽지 않는다 — 로드 시점에
+     naver.maps.Util.ClassExtend 를 호출하므로 SDK 보다 먼저 읽히면 ReferenceError 로 죽는다.
+     initNaver 가 SDK 로드 성공 뒤에 동적으로 읽는다. -->
 <script>
 (function () {
   'use strict';
 
-  var BUILD = 'naver-2';
+  var BUILD = 'naver-3';
   var NAVER_KEY = '__NAVER_KEY__';
   var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   var TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
@@ -176,6 +178,16 @@
     s.onload = function () {
       if (done) return;
       if (!window.naver || !window.naver.maps) { done = true; cb(new Error('naver.maps 없음')); return; }
+      // ⚠️ 클러스터링 라이브러리는 **SDK 로드 뒤에** 읽어야 한다(로드 시점에 naver.maps 를 쓴다).
+      //    실패해도 지도는 떠야 하므로 onerror 에서도 계속 진행한다 — 그 경우 마커가 낱개로 찍힌다.
+      var c = document.createElement('script');
+      c.src = 'vendor/marker-clustering.js';
+      c.onload = function () { buildMap(); };
+      c.onerror = function () { post({ type: 'warn', detail: '클러스터링 라이브러리 로드 실패 — 마커를 낱개로 표시합니다' }); buildMap(); };
+      document.head.appendChild(c);
+      return;
+
+      function buildMap() {
       var map = new naver.maps.Map('map', {
         center: new naver.maps.LatLng(36.5, 127.8), zoom: 7,
         mapDataControl: false, scaleControl: true, logoControl: true, // ⚠️ 로고는 약관상 가린다
@@ -268,6 +280,7 @@
       };
       done = true;
       cb(null);
+      } // buildMap
     };
     document.head.appendChild(s);
   }
