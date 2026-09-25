@@ -106,6 +106,13 @@
   var facs = [];
   var meMarker = null;
 
+  // 컨테이너 크기가 늦게 확정되는 경우(모바일 주소창, 부모 레이아웃, 폰트 로드)를 모두 잡는다.
+  function refit() { try { map.invalidateSize(false); } catch (e) { /* noop */ } }
+  window.addEventListener('resize', refit);
+  window.addEventListener('orientationchange', refit);
+  setTimeout(refit, 150); setTimeout(refit, 600); setTimeout(refit, 1500);
+  if (window.ResizeObserver) { try { new ResizeObserver(refit).observe(document.body); } catch (e) { /* noop */ } }
+
   function fmtMonthly(v) {
     if (!v) return '';
     if (v >= 100000000) return '월 ' + (Math.round(v / 10000000) / 10) + '억';
@@ -118,6 +125,10 @@
       html: '<div class="pin ' + (priced ? 'priced' : 'plain') + '">' + esc(label) + '</div>' });
   }
   function render(cat) {
+    // ⚠️ fitBounds 전에 반드시 크기를 다시 잰다. iframe 이 배치되기 전에 지도가 만들어지면
+    //    Leaflet 이 컨테이너를 0 또는 엉뚱한 크기로 알고 있어 시야가 엉뚱한 곳에 맞춰지고
+    //    타일도 일부만 붙는다(2026-09-25 모바일에서 실제로 그렇게 나왔다).
+    map.invalidateSize(false);
     cluster.clearLayers();
     var shown = 0;
     for (var i = 0; i < facs.length; i++) {
@@ -161,6 +172,7 @@
     } else if (d.type === 'single' && typeof d.lat === 'number' && typeof d.lng === 'number') {
       // 시설 상세 미니맵 — 한 곳만. approx 면 핀 대신 반경 200m 원(비로그인 위치 흐리기 유지).
       if (d.scrollWheelZoom === false) map.scrollWheelZoom.disable();
+      map.invalidateSize(false);
       map.setView([d.lat, d.lng], d.approx ? 14 : 15);
       var nm = String(d.name == null ? '' : d.name);
       if (d.approx) {
