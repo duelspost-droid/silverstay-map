@@ -30,26 +30,45 @@
 <link rel="stylesheet" href="vendor/MarkerCluster.Default.css"/>
 <style>
   html, body, #map { height: 100%; margin: 0; font-family: Pretendard, 'Malgun Gothic', sans-serif; }
-  body { background: #F7F8FA; }
+  /* ⚠️ 색은 부모 앱 lib/theme.ts 의 값을 **손으로 옮긴 사본**이다. 프레임은 별도 오리진 정적 HTML 이라
+     theme.ts 를 import 할 수 없다. theme 를 바꾸면 여기도 같이 바꿀 것 — scripts/tests/mapFilters.test.ts 가 대조한다.
+       #0F7560 = colors.brandText(라이트) = colors.brand(brand-600). 흰 글자 5.62:1.
+       예전 #0E8C72(규정 원색)는 흰 글자 4.19:1 로 AA 미달이라 핀·클러스터 면에서 뺐다(패키지 §2-3).
+       #FAF9F7 = colors.bg · #5F5B54 = colors.muted · #6B665D = colors.subtle · #191F28 = colors.text */
+  body { background: #FAF9F7; }
+  /* 시설 핀 11px 은 패키지 §3-4 '지도 배지 예외'(12px 미만 허용 범위) — 핀이 커지면 서로 겹친다 */
   .pin { position: absolute; left: 0; top: 0; transform: translate(-50%,-100%); white-space: nowrap;
     font-weight: 800; font-size: 11px; line-height: 1; padding: 5px 9px; border-radius: 13px;
-    border: 1.6px solid #fff; box-shadow: 0 2px 5px rgba(0,0,0,.3); cursor: pointer }
+    border: 1.6px solid #fff; box-shadow: 0 2px 5px rgba(28,25,20,.3); cursor: pointer;
+    font-variant-numeric: tabular-nums }
   .pin::after { content: ''; position: absolute; left: 50%; top: 100%; margin-left: -4px; border: 4px solid transparent }
-  .pin.priced { background: #0E8C72; color: #fff } .pin.priced::after { border-top-color: #0E8C72 }
+  .pin.priced { background: #0F7560; color: #fff } .pin.priced::after { border-top-color: #0F7560 }
   .pin.plain { background: #465059; color: #fff } .pin.plain::after { border-top-color: #465059 }
-  .ncluster { display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800;
-    font-size: 13px; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,.35); cursor: pointer }
+
+  /* ── 클러스터(패키지 §4-5, DR-69) ─────────────────────────────────────
+     · 지름 5단계 34/42/50/58/66px(개수 구간은 아래 CLUSTER_BANDS 주석) · 화면 폭의 약 8% 를 넘지 않게 압축
+     · 면 #096E5A(brand-700, 흰 글자 6.20:1 — 패키지 §4-5 원문) + opacity .94 + 흰 테두리 2px — 아래 지도 라벨('경기도' 등)이 비쳐 보이게
+     · 숫자 13px 이상, tabular-nums
+     · 보이는 원과 누르는 영역을 나눈다: .sc-hit 는 최소 48×48(토큰 --tap-min), .sc 가 보이는 원 */
+  .sc-hit { display: flex; align-items: center; justify-content: center; background: transparent; cursor: pointer;
+    border-radius: 50% }
+  .sc { display: flex; align-items: center; justify-content: center; box-sizing: border-box; border-radius: 50%;
+    background: #096E5A; color: #fff; opacity: .94; border: 2px solid #fff; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    box-shadow: 0 2px 4px rgba(28,25,20,.06), 0 6px 16px rgba(28,25,20,.07);
+    transition: transform 160ms cubic-bezier(.2,0,0,1) }
+  .sc-hit:hover .sc { transform: scale(1.06) }
+  /* 키보드 포커스 링 — Leaflet 은 바깥 .leaflet-marker-icon 이 포커스를 받는다(outline:none 금지) */
+  .leaflet-marker-icon:focus-visible, .sc-hit:focus-visible { outline: 3px solid #0F7560; outline-offset: 2px }
+  @media (prefers-reduced-motion: reduce) { .sc { transition: none } .sc-hit:hover .sc { transform: none } }
   .me { width: 18px; height: 18px; border-radius: 50%; background: #2A7FFF; border: 3px solid #fff;
     box-shadow: 0 0 0 4px rgba(42,127,255,.3) }
   .lp { font-size: 13px; line-height: 1.5; padding: 10px 12px; min-width: 150px }
   .lp b { font-size: 14px }
-  .lp a { color: #0E8C72; font-weight: 700; text-decoration: none }
-  .lp .mm { color: #0E8C72; font-weight: 700; font-size: 12px }
-  .marker-cluster-small, .marker-cluster-small div { background: rgba(14,140,114,.25) }
-  .marker-cluster-small div div, .marker-cluster-medium div div { color: #fff }
-  .marker-cluster-medium, .marker-cluster-medium div { background: rgba(14,140,114,.45) }
-  .marker-cluster-large, .marker-cluster-large div { background: rgba(14,140,114,.65) }
-  .marker-cluster div { color: #fff; font-weight: 700 }
+  .lp a { color: #0F7560; font-weight: 700; text-decoration: underline; display: inline-block; padding: 6px 0 }
+  .lp .mm { color: #0F7560; font-weight: 700; font-size: 12px }
+  .lp .meta { color: #5F5B54 }
+  .lp .ref { color: #6B665D; font-size: 12px }
   #diag { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
     text-align: center; padding: 24px; color: #465059; font-size: 13px; line-height: 1.7;
     background: #F7F8FA; z-index: 9999 }
@@ -69,7 +88,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 'naver-3';
+  var BUILD = 'naver-4'; // DR-69 클러스터 5단계·색 토큰 — 프레임을 고쳤는데 그대로면 ready.build 부터 확인
   var NAVER_KEY = 'rng0yufszb';
   var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   var TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
@@ -115,15 +134,51 @@
   function popupHtml(f) {
     var mm = fmtMonthly(f.mm);
     return '<div class="lp"><b>' + esc(f.name) + '</b><br>'
-      + '<span style="color:#777">' + (f.cat ? esc(f.cat) + ' · ' : '') + esc(f.region) + '</span>'
-      + (mm ? '<br><span class="mm">' + mm + '~</span> <span style="color:#999;font-size:10px">참고가</span>' : '')
+      + '<span class="meta">' + (f.cat ? esc(f.cat) + ' · ' : '') + esc(f.region) + '</span>'
+      + (mm ? '<br><span class="mm">' + mm + '~</span> <span class="ref">참고가</span>' : '')
       + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>';
   }
+
+  // ── 클러스터 크기(패키지 §4-5) ─────────────────────────────────────
+  // 개수 구간 4경계 → 5단계. 실제 마커 분포(2026-10-19 anon 조회, 좌표 보유 6,730곳)로 정했다:
+  //   · 전국 줌(7)에서 클러스터는 2~2,231곳, 중앙값 ≈350 → 200·1,000 경계가 '수도권 덩어리(1,000+)'와
+  //     '도 단위(200~999)'를 가른다.
+  //   · 시·군 줌(10)에서는 중앙값 ≈7, 상위 10% ≈42 → 10·50 경계가 '동네(10 미만)'와 '읍·구(10~49)'를 가른다.
+  //   · 분류를 좁히면(실버타운 49곳) 가장 큰 클러스터도 24곳이라 아래 두 단계에만 머문다 —
+  //     작은 분류가 큰 원으로 부풀어 보이지 않는다.
+  //   경계가 대략 ×4~5 간격(로그 눈금)이라 줌을 바꿔도 단계가 고르게 쓰인다. 예전 네이버 경계 [10,50,200,1000] 과 같다.
+  // ⚠️ app 쪽 시험(scripts/tests/mapFilters.test.ts)이 이 두 배열을 읽어 대조한다 — 형식을 바꾸지 말 것.
+  var CLUSTER_BANDS = [10, 50, 200, 1000];
+  var CLUSTER_SIZES = [34, 42, 50, 58, 66];
+  var TAP_MIN = 48;
+  function bandOf(n) { var i = 0; while (i < CLUSTER_BANDS.length && n >= CLUSTER_BANDS[i]) i++; return i; }
+  // 지름 상한 = 지도 폭의 8%(패키지: '최대 8%'). 단, 42px 아래로는 줄이지 않는다 —
+  // 375px 폰에서 8% 는 30px 이라 네 자리 숫자(13px)가 원에 들어가지 않고 5단계 구분도 사라진다.
+  // 상한이 66 보다 작으면 34~66 을 34~상한 사이로 **비례 압축**해 단계 차이를 남긴다.
+  //   375px → 34/36/38/40/42 · 768px → 34/41/48/54/61 · 825px 이상 → 34/42/50/58/66
+  function clusterCap() {
+    var el = document.getElementById('map');
+    var w = (el && el.clientWidth) || window.innerWidth || 0;
+    return Math.max(42, Math.min(66, Math.round(w * 0.08)));
+  }
+  function clusterSize(band, cap) {
+    var s = CLUSTER_SIZES[band];
+    return Math.round(34 + (s - 34) * (cap - 34) / (66 - 34));
+  }
+  function clusterFont(size) { return size >= 58 ? 16 : size >= 50 ? 14 : 13; }  // 숫자 13px 이상
+  function clusterHtml(size, countText) {
+    var hit = Math.max(TAP_MIN, size);
+    var label = countText ? ' role="img" aria-label="시설 ' + countText + '곳 묶음 — 누르면 확대"' : '';
+    return '<div class="sc-hit"' + label + ' style="width:' + hit + 'px;height:' + hit + 'px">'
+      + '<div class="sc" style="width:' + size + 'px;height:' + size + 'px;font-size:' + clusterFont(size) + 'px">'
+      + '<span>' + countText + '</span></div></div>';
+  }
+  var lastCap = 0;  // 지도 폭이 바뀌어 상한이 달라지면 클러스터 아이콘을 다시 만든다(refit 참조)
 
   // ── 공통 상태 ────────────────────────────────────────────────────
   var facs = [], curCat = null, provider = null;
   var userMoved = false, fitting = false, lastFitW = 0, lastFitH = 0;
-  var impl = null; // { render, locate, single, resize, size, view }
+  var impl = null; // { render, locate, single, resize, size, view, restyle }
 
   function boundsOf(cat) {
     var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, n = 0;
@@ -150,6 +205,9 @@
   function refit() {
     if (!impl) return;
     impl.resize();
+    // 크기 0 에서 처음 그려졌거나(상한 42 로 고정) 화면 회전·창 크기 변경으로 폭이 바뀌면 원 크기를 다시 계산한다.
+    var cap = clusterCap();
+    if (cap !== lastCap) { lastCap = cap; if (impl.restyle) impl.restyle(); }
     var s = impl.size();
     if (!userMoved && facs.length && s[0] > 0 && s[1] > 0 && (lastFitW === 0 || lastFitH === 0)) {
       impl.fit(curCat);
@@ -195,6 +253,25 @@
       naver.maps.Event.addListener(map, 'dragstart', function () { if (!fitting) userMoved = true; });
       naver.maps.Event.addListener(map, 'zoom_start', function () { if (!fitting) userMoved = true; });
       var markers = [], cluster = null, meMarker = null, info = null;
+      // 클러스터 아이콘 5장 — 숫자는 stylingFunction 이 클러스터마다 채운다(아이콘 HTML 은 공유된다).
+      function naverIcons(cap) {
+        var out = [];
+        for (var b = 0; b < CLUSTER_SIZES.length; b++) {
+          var size = clusterSize(b, cap), hit = Math.max(TAP_MIN, size);
+          out.push({ content: clusterHtml(size, ''), size: new naver.maps.Size(hit, hit), anchor: new naver.maps.Point(hit / 2, hit / 2) });
+        }
+        return out;
+      }
+      // ⚠️ 매번 **새 함수**를 돌려준다 — restyle 에서 같은 함수를 다시 넣으면 KVO 가 바뀐 줄 몰라 숫자를 다시 안 쓴다.
+      function naverStyling() {
+        return function (cm, count) {
+          var root = cm.getElement && cm.getElement();
+          var el = root && root.querySelector('span');
+          if (el) el.innerText = String(count);
+          var hitEl = root && root.querySelector('.sc-hit');
+          if (hitEl) { hitEl.setAttribute('role', 'img'); hitEl.setAttribute('aria-label', '시설 ' + count + '곳 묶음 — 누르면 확대'); }
+        };
+      }
       function clear() {
         markers.forEach(function (m) { m.setMap(null); });
         markers = [];
@@ -207,6 +284,8 @@
           return { center: [Number(c.lat().toFixed(4)), Number(c.lng().toFixed(4))], zoom: map.getZoom(), size: [s2.width, s2.height] };
         },
         resize: function () { try { naver.maps.Event.trigger(map, 'resize'); } catch (e) { /* noop */ } },
+        // icons 를 먼저, 숫자 채우는 함수를 나중에 — 아이콘이 바뀌면 숫자 칸이 비므로 순서가 중요하다.
+        restyle: function () { if (cluster) { cluster.setIcons(naverIcons(lastCap)); cluster.setStylingFunction(naverStyling()); } },
         fit: function (cat) {
           var b = boundsOf(cat); if (!b) return;
           fitting = true;
@@ -236,19 +315,12 @@
           }
           var MC = window.MarkerClustering;
           if (MC && markers.length) {
-            var icon = function (size, bg) {
-              return { content: '<div class="ncluster" style="width:' + size + 'px;height:' + size + 'px;background:' + bg + '"><span></span></div>',
-                size: new naver.maps.Size(size, size), anchor: new naver.maps.Point(size / 2, size / 2) };
-            };
+            lastCap = clusterCap();
             cluster = new MC({
               map: map, markers: markers, disableClickZoom: false, minClusterSize: 2, maxZoom: 13, gridSize: 120,
-              indexGenerator: [10, 50, 200, 1000],
-              icons: [icon(36, 'rgba(14,140,114,.85)'), icon(44, 'rgba(14,140,114,.9)'),
-                icon(52, 'rgba(11,90,60,.92)'), icon(62, 'rgba(11,90,60,.95)')],
-              stylingFunction: function (cm, count) {
-                var el = cm.getElement() && cm.getElement().querySelector('span');
-                if (el) el.innerText = String(count);
-              },
+              indexGenerator: CLUSTER_BANDS.slice(),
+              icons: naverIcons(lastCap),
+              stylingFunction: naverStyling(),
             });
           } else {
             markers.forEach(function (m) { m.setMap(map); });
@@ -270,10 +342,10 @@
           lastFitW = 1; lastFitH = 1; // 단일 지점은 재조정 대상이 아니다
           if (d.approx) {
             new naver.maps.Circle({ map: map, center: ll, radius: 200,
-              strokeColor: '#0E8C72', strokeWeight: 2, fillColor: '#0E8C72', fillOpacity: 0.15 });
+              strokeColor: '#0F7560', strokeWeight: 2, fillColor: '#0F7560', fillOpacity: 0.15 });
           } else {
             new naver.maps.Marker({ position: ll, map: map, icon: { content:
-              '<div style="background:#0E8C72;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>',
+              '<div style="background:#0F7560;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>',
               anchor: new naver.maps.Point(11, 22) } });
           }
         },
@@ -292,8 +364,14 @@
     if (!window.L) { cb(new Error('leaflet 없음')); return; }
     var map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([36.5, 127.8], 7);
     L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTRIB }).addTo(map);
+    lastCap = clusterCap();
     var cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 60,
-      spiderfyOnMaxZoom: true, disableClusteringAtZoom: 16 });
+      spiderfyOnMaxZoom: true, disableClusteringAtZoom: 16, showCoverageOnHover: false,
+      // 기본 아이콘(.marker-cluster-small/medium/large 3단계, 옅은 반투명 원)을 5단계 브랜드 원으로 바꾼다.
+      iconCreateFunction: function (c) {
+        var n = c.getChildCount(), size = clusterSize(bandOf(n), lastCap), hit = Math.max(TAP_MIN, size);
+        return L.divIcon({ className: '', html: clusterHtml(size, String(n)), iconSize: [hit, hit] });
+      } });
     map.addLayer(cluster);
     map.on('dragstart', function () { if (!fitting) userMoved = true; });
     map.on('zoomstart', function () { if (!fitting) userMoved = true; });
@@ -305,6 +383,7 @@
         return { center: [Number(c.lat.toFixed(4)), Number(c.lng.toFixed(4))], zoom: map.getZoom(), size: [s.x, s.y] };
       },
       resize: function () { try { map.invalidateSize(false); } catch (e) { /* noop */ } },
+      restyle: function () { try { cluster.refreshClusters(); } catch (e) { /* noop */ } },
       fit: function (cat) {
         var b = boundsOf(cat); if (!b) return;
         fitting = true;
@@ -338,11 +417,11 @@
         lastFitW = 1; lastFitH = 1;
         var nm = String(d.name == null ? '' : d.name);
         if (d.approx) {
-          L.circle([d.lat, d.lng], { radius: 200, color: '#0E8C72', weight: 2, fillColor: '#0E8C72', fillOpacity: .15 })
+          L.circle([d.lat, d.lng], { radius: 200, color: '#0F7560', weight: 2, fillColor: '#0F7560', fillOpacity: .15 })
             .addTo(map).bindPopup(esc(nm) + ' (대략 위치)');
         } else {
           L.marker([d.lat, d.lng], { icon: L.divIcon({ className: '', iconSize: [22, 22], iconAnchor: [11, 22],
-            html: '<div style="background:#0E8C72;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>' }) })
+            html: '<div style="background:#0F7560;border:2px solid #fff;border-radius:50% 50% 50% 0;width:22px;height:22px;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.45)"></div>' }) })
             .addTo(map).bindPopup(esc(nm));
         }
       },
