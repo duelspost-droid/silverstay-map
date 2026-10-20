@@ -141,6 +141,9 @@
         //   옛 앱(ln 없음)이면 같은 뜻의 기본 문구.
         : f.lt ? '<br><span class="mm">' + esc(f.lt) + '</span><br><span class="ref">장기요양 추정 · '
           + esc(f.ln || '일반 본인부담 기준, 식비 등 비급여는 별도') + '</span>'
+        // 요양병원 건강보험 추정 — 장기요양이 아니라 별도 칸(lh)이다. 식대 포함·간병비는 빠진 금액이라 앱이 보낸 ln(카드와 같은 글자)과 함께 낸다.
+        : f.lh ? '<br><span class="mm">' + esc(f.lh) + '</span><br><span class="ref">건강보험 추정 · '
+          + esc(f.ln || '일반 본인부담 기준(식대 포함), 간병비는 별도') + '</span>'
         // 분양형(오너 지시 2026-10-20 '분양형은 분양형으로') — 관리비를 금액으로 그리지 않는다. 옛 앱은 ow 를 안 보내 이 줄이 없다.
         : f.ow ? '<br><span class="meta">분양형</span> <span class="ref">비용 구조 다름</span>' : '')
       + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>';
