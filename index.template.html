@@ -88,7 +88,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 'naver-4'; // DR-69 클러스터 5단계·색 토큰 — 프레임을 고쳤는데 그대로면 ready.build 부터 확인
+  var BUILD = 'naver-5'; // DR-69 클러스터 5단계·색 토큰 — 프레임을 고쳤는데 그대로면 ready.build 부터 확인
   var NAVER_KEY = '__NAVER_KEY__';
   var TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
   var TILE_ATTRIB = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
@@ -135,7 +135,14 @@
     var mm = fmtMonthly(f.mm);
     return '<div class="lp"><b>' + esc(f.name) + '</b><br>'
       + '<span class="meta">' + (f.cat ? esc(f.cat) + ' · ' : '') + esc(f.region) + '</span>'
-      + (mm ? '<br><span class="mm">' + mm + '~</span> <span class="ref">참고가</span>' : '')
+      + (mm ? '<br><span class="mm">' + mm + '~</span> <span class="ref">참고가</span>'
+        // 장기요양 추정(오너 결정 2026-10-20) — 공표가가 아니라 물결·'참고가' 없이, 무엇을 더했는지 함께.
+        //   급여분 본인부담만이다 — 안내를 빼면 실제보다 싸 보인다. 글자는 앱이 보낸 ln(카드와 같은 ltcCardRange().note).
+        //   옛 앱(ln 없음)이면 같은 뜻의 기본 문구.
+        : f.lt ? '<br><span class="mm">' + esc(f.lt) + '</span><br><span class="ref">장기요양 추정 · '
+          + esc(f.ln || '일반 본인부담 기준, 식비 등 비급여는 별도') + '</span>'
+        // 분양형(오너 지시 2026-10-20 '분양형은 분양형으로') — 관리비를 금액으로 그리지 않는다. 옛 앱은 ow 를 안 보내 이 줄이 없다.
+        : f.ow ? '<br><span class="meta">분양형</span> <span class="ref">비용 구조 다름</span>' : '')
       + '<br><a href="#" onclick="window.__sel(&#39;' + uuidOnly(f.id) + '&#39;);return false;">상세 보기 &rsaquo;</a></div>';
   }
 
